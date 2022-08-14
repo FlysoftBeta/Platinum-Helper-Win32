@@ -9,29 +9,27 @@ using namespace std;
 
 #define DWMWA_SYSTEMBACKDROP_TYPE 38
 
+typedef BOOL(WINAPI* pNtSuspendOrResumeProcess)(HANDLE);
+
 int main(int argc, char* argv[])
 {
     if (argc < 2) return -1;
     string command = string(argv[1]);
     if ((command == "process_suspend" || command == "process_resume") && argc == 3) {
-        DWORD processID = stoul(argv[2]);
-        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        THREADENTRY32 threadEntry;
-        threadEntry.dwSize = sizeof(THREADENTRY32);
-        Thread32First(snapshot, &threadEntry);
-        do
-        {
-            if (threadEntry.th32OwnerProcessID == processID)
-            {
-                HANDLE thread = OpenThread(THREAD_ALL_ACCESS, FALSE, threadEntry.th32ThreadID);
-                if (SUCCEEDED(thread)) {
-                    if (argv[1] == "process_suspend") SuspendThread(thread);
-                    else ResumeThread(thread);
-                    CloseHandle(thread);
-                }
+        DWORD pid = stoul(argv[2]);
+        HANDLE process = OpenProcess(PROCESS_ALL_ACCESS, NULL, pid);
+        const HINSTANCE ntdll = LoadLibrary(L"ntdll.dll");
+        if (ntdll != 0) {
+            const pNtSuspendOrResumeProcess NtSuspendProcess =
+                (pNtSuspendOrResumeProcess)GetProcAddress(ntdll, "NtSuspendProcess");
+            const pNtSuspendOrResumeProcess NtResumeProcess =
+                (pNtSuspendOrResumeProcess)GetProcAddress(ntdll, "NtResumeProcess");
+            if (NtSuspendProcess && NtResumeProcess) {
+                if (command == "process_suspend") NtSuspendProcess(process);
+                else if (command == "process_resume") NtResumeProcess(process);
             }
-        } while (Thread32Next(snapshot, &threadEntry));
-        CloseHandle(snapshot);
+        }
+        CloseHandle(process);
     }
     else if (command == "set_taskbar_visibility" && argc == 3) {
         bool show = string(argv[2]) == "show";
